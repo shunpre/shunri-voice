@@ -135,3 +135,39 @@ MP4 / MP3 / WAV などをそのまま指定できます。
 Intel Mac では、ホストに ffmpeg がなくてもセットアップ済みの Docker イメージ内の ffmpeg を使って変換します。
 
 参照音声はGit管理外なので、公開GitHubへアップロードされません。
+
+
+## いつでも使える `shunri` コマンド
+
+一度だけインストールします。
+
+    cd ~/shunri-voice
+    git pull origin main
+    make install-cli
+    source ~/.zshrc
+
+以後は、どのフォルダにいても瞬理の固定声を呼び出せます。
+
+文章を直接指定:
+
+    shunri "こんにちは。瞬理です。今日はLPについて話します。"
+
+生成後そのまま再生:
+
+    shunri --play "こんにちは。瞬理です。"
+
+台本ファイルから生成:
+
+    shunri --file ~/Desktop/script.txt
+
+保存先を指定:
+
+    shunri --output ~/Desktop/shunri-reel.wav "読み上げたい文章"
+
+標準の出力先:
+
+    ~/shunri-voice/outputs/shunri.wav
+
+Intel Mac では Irodori-TTS API が停止していれば `shunri` コマンドが Docker Compose サービスを自動起動します。
+
+固定声の正本は `references/shunri.wav` です。このファイルを明示的に差し替えない限り、同じ瞬理の声を使い続けます。
