@@ -1,26 +1,78 @@
 ---
-name: shunri-voice
-description: Generate Japanese narration using Shunri's canonical Irodori-TTS reference voice.
+name: shunri
+description: Orchestrate Shunri Reel production. Use the canonical Shunri voice, preserve approved scripts, create narration jobs, and progress toward finished vertical video.
 ---
 
-# Shunri Voice Skill
+# 瞬理 Skill
 
-## Purpose
+## North star
 
-Generate narration for the original AI PR character 瞬理 using the canonical local reference voice.
+The intended user experience is:
 
-## Source of truth
+    @瞬理 この台本で動画を作って
 
-- Canonical reference: `references/shunri.wav`
-- Voice preset: `clone`
-- Generator: `scripts/generate.py`
-- User-facing command: `shunri`
+and the system should progress through:
 
-Do not replace `references/shunri.wav` unless the user explicitly chooses a new canonical voice.
+    script
+    → Shunri narration
+    → storyboard / visuals
+    → captions
+    → BGM / SE
+    → 9:16 Reel render
+    → QA
 
-## Commands
+The implementation is incremental. Never pretend an unimplemented stage is complete.
 
-Direct text:
+## Canonical voice
+
+The canonical reference voice is local only:
+
+    references/shunri.wav
+
+Rules:
+
+- always use preset `clone`
+- never fall back to Voice Design candidates A-E
+- never replace the canonical reference unless the user explicitly selects a new voice
+- the reference audio itself must not be committed to GitHub
+
+## When a script is already approved
+
+Do not rewrite it.
+
+Create a narration job using the private production bridge:
+
+    shunpre/shun-x-scheduler
+    runtime/shunri-reel-jobs.json
+
+Required job fields:
+
+- action: narrate
+- status: queued
+- scriptApproved: true
+- voice: shunri
+- script: exact approved narration text
+
+The user's Mac worker will generate:
+- local WAV master
+- private-repo MP3 proxy
+- result entry in runtime/shunri-reel-results.json
+
+## When only a topic / brief exists
+
+Draft:
+1. Reel hook
+2. narration script
+3. scene-by-scene storyboard
+4. on-screen captions
+5. visual asset requirements
+6. BGM / SE direction
+
+Ask for script approval before enqueueing narration unless the user explicitly says no approval is necessary.
+
+## Current local commands
+
+Direct narration:
 
     shunri "読み上げたい文章"
 
@@ -28,24 +80,38 @@ Generate and play:
 
     shunri --play "読み上げたい文章"
 
-Text file:
+Process private GitHub narration queue once:
 
-    shunri --file /path/to/script.txt
+    make worker-once
 
-Choose output path:
+Install automatic queue processing:
 
-    shunri --output ~/Desktop/narration.wav "読み上げたい文章"
+    make install-reel-worker
 
-Pipe text:
+## Private bridge
 
-    echo "読み上げたい文章" | shunri
+The private scheduler repository is the transport layer for ChatGPT ↔ local Mac.
 
-## Runtime behavior
+Canonical contract:
 
-On Intel macOS, the command checks the local Irodori-TTS Docker API and starts the compose service automatically if necessary.
+    shun-x-scheduler/docs/instagram/CHATGPT_SHUNRI_REEL_SKILL.md
 
-The latest result is also generated internally as `outputs/clone.wav`, and the user-facing result defaults to `outputs/shunri.wav`.
+## Video stages
 
-## Safety / voice provenance
+These are the intended stages:
 
-Use the canonical reference only for the original fictional character 瞬理. Do not substitute or clone a real person's voice without explicit permission.
+1. script
+2. narration
+3. storyboard
+4. visual generation
+5. scene timing
+6. caption generation
+7. BGM / SE
+8. 9:16 render
+9. QA
+
+Narration automation is implemented first. Visual generation and final render should be connected to the same job/result contract rather than creating a separate ad-hoc workflow.
+
+## Safety / provenance
+
+The canonical voice is for the original fictional AI PR character 瞬理. Do not substitute or clone a real person's voice without explicit permission.

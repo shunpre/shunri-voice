@@ -171,3 +171,32 @@ Intel Mac では、ホストに ffmpeg がなくてもセットアップ済み�
 Intel Mac では Irodori-TTS API が停止していれば `shunri` コマンドが Docker Compose サービスを自動起動します。
 
 固定声の正本は `references/shunri.wav` です。このファイルを明示的に差し替えない限り、同じ瞬理の声を使い続けます。
+
+
+## 瞬理 Reel 自動キュー
+
+最終目標は、ChatGPT側から `@瞬理` 相当の1回の依頼で台本→瞬理音声→動画まで流すことです。
+
+現段階では、private repository `shunpre/shun-x-scheduler` の
+
+    runtime/shunri-reel-jobs.json
+
+をローカルMacが監視し、`action=narrate` の確定台本を瞬理の固定声で自動ナレーション化できます。
+
+1回だけ処理:
+
+    make worker-once
+
+60秒ごとの自動処理をインストール:
+
+    make install-reel-worker
+
+停止・削除:
+
+    make uninstall-reel-worker
+
+生成物:
+- WAV master: `~/shunri-voice/outputs/jobs/<job-id>/narration.wav`
+- downstream用MP3: private scheduler repo の `runtime/shunri-reel-assets/<job-id>/narration.mp3`
+
+参照声 `references/shunri.wav` はローカルだけに残し、GitHubには保存しません。
