@@ -19,7 +19,7 @@ def parse_args() -> argparse.Namespace:
     group = parser.add_mutually_exclusive_group()
     group.add_argument("--text", help="Text to synthesize.")
     group.add_argument("--text-file", type=Path, help="UTF-8 text file to synthesize.")
-    parser.add_argument("--preset", default="default", help='Preset name or "all".')
+    parser.add_argument("--preset", default="default", help="Preset name or all.")
     parser.add_argument("--reference", type=Path, help="Optional reference audio for fixed speaker identity.")
     parser.add_argument("--device", choices=["auto", "mps", "cpu"], default="auto")
     parser.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT)
@@ -60,12 +60,13 @@ def run_one(name: str, preset: dict, text: str, model: str, upstream: Path, outp
 
     output_dir.mkdir(parents=True, exist_ok=True)
     output = output_dir / f"{name}.wav"
+    caption = preset["caption"]
 
     cmd = [
         "uv", "run", "--no-sync", "python", "infer.py",
         "--hf-checkpoint", model,
         "--text", text,
-        "--caption", preset["caption"],
+        "--caption", caption,
         "--seed", str(preset.get("seed", 1234)),
         "--model-device", device,
         "--codec-device", device,
@@ -82,7 +83,7 @@ def run_one(name: str, preset: dict, text: str, model: str, upstream: Path, outp
     print(f"\n=== {name} ===")
     print(f"device: {device}")
     print(f"output: {output}")
-    print(f"caption: {preset[\"caption\"]}")
+    print(f"caption: {caption}")
     subprocess.run(cmd, cwd=upstream, check=True)
 
 
@@ -101,10 +102,11 @@ def main() -> int:
             raise SystemExit(f"不明なpreset: {args.preset}")
         selected = [(args.preset, presets[args.preset])]
 
+    reference_label = str(args.reference) if args.reference else "none (Voice Design)"
     print("Shunri Voice Lab")
     print(f"model: {model}")
     print(f"device: {device}")
-    print(f"reference: {args.reference or \"none (Voice Design)\"}")
+    print(f"reference: {reference_label}")
 
     for name, preset in selected:
         run_one(name, preset, text, model, args.upstream, args.output_dir, args.reference, device)
