@@ -108,3 +108,30 @@ Irodori-TTS のコード・モデルの利用条件と Ethical Restrictions に�
 - references/: 採用した参照音声（Git管理外）
 - .vendor/Irodori-TTS/: Apple Silicon用本体（Git管理外）
 - .vendor/Irodori-TTS-Server/: Intel Mac用公式APIサーバー（Git管理外）
+
+
+## MP4 / MP3 から瞬理の固定声を登録
+
+気に入っている声サンプルがある場合は、Voice Design でゼロから声を作るより、参照音声として登録する方が有効です。
+
+MP4 / MP3 / WAV などをそのまま指定できます。
+
+    make reference FILE="/path/to/voice-sample.mp4"
+
+内部で音声だけを抽出し、Irodori-TTS向けの 48kHz / mono / PCM WAV に変換して、
+
+    references/shunri.wav
+
+へ保存します。
+
+その後、固定声でテスト生成します。
+
+    make shunri
+
+生成先:
+
+    outputs/clone.wav
+
+Intel Mac では、ホストに ffmpeg がなくてもセットアップ済みの Docker イメージ内の ffmpeg を使って変換します。
+
+参照音声はGit管理外なので、公開GitHubへアップロードされません。
