@@ -119,6 +119,9 @@ def run_via_server(
     try:
         with urllib.request.urlopen(request, timeout=7200) as response:
             output.write_bytes(response.read())
+    except urllib.error.HTTPError as exc:
+        detail = exc.read().decode("utf-8", errors="replace")
+        raise SystemExit(f"Irodori-TTS API がエラーを返しました: HTTP {exc.code}\n{detail}") from exc
     except urllib.error.URLError as exc:
         raise SystemExit(
             "Irodori-TTS API に接続できません。Docker Desktop が起動しているか確認し、"
@@ -188,8 +191,9 @@ def main() -> int:
     runtime = "docker-api" if is_intel_mac() else "local"
     reference_label = str(args.reference) if args.reference else "none (Voice Design)"
 
+    display_model = "Aratako/Irodori-TTS-v4.1-Small-MF" if is_intel_mac() else model
     print("Shunri Voice Lab")
-    print(f"model: {model}")
+    print(f"model: {display_model}")
     print(f"runtime: {runtime}")
     print(f"reference: {reference_label}")
 
