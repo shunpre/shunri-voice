@@ -36,7 +36,7 @@ Docker Desktop を起動してから:
 
     make setup
 
-セットアップはCPU用 Docker イメージを構築し、Irodori-TTS API を localhost:8088 で起動します。
+セットアップはCPU用 Docker イメージを構築し、Irodori-TTS API を localhost:8088 で起動します。Intel MacではCPU負荷を抑えるため、4ステップの MeanFlow 版 `Irodori-TTS-v4.1-Small-MF` を使用します。
 
 ## 2. 5種類の瞬理候補を一括生成
 
