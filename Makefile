@@ -1,6 +1,6 @@
 PYTHON ?= python3
 
-.PHONY: setup voices voice reference shunri clean
+.PHONY: setup voices voice reference shunri install-cli uninstall-cli clean
 
 setup:
 	bash scripts/bootstrap.sh
@@ -18,6 +18,12 @@ reference:
 shunri:
 	@test -f references/shunri.wav || (echo 'references/shunri.wav がありません。先に make reference FILE="..." を実行してください。' && exit 1)
 	$(PYTHON) scripts/generate.py --text-file samples/reel_script.txt --preset clone --reference references/shunri.wav
+
+install-cli:
+	bash scripts/install_cli.sh
+
+uninstall-cli:
+	rm -f "$(HOME)/.local/bin/shunri"
 
 clean:
 	rm -rf outputs
