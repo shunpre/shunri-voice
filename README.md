@@ -28,9 +28,15 @@ uv がない場合:
 
 ### Intel Mac
 
-Docker が必要です。未導入なら:
+Docker が必要です。
+
+macOS 13以降なら Homebrew で導入できます。
 
     brew install --cask docker
+
+macOS 12 Monterey では Homebrew の最新 Docker Desktop は入らないため、Docker公式リリースノートから **Docker Desktop 4.71.0 / Mac with Intel chip** を手動インストールしてください。
+
+https://docs.docker.com/desktop/release-notes/#4710
 
 Docker Desktop を起動してから:
 

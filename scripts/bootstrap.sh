@@ -21,8 +21,15 @@ if [ "$OS" = "Darwin" ] && [ "$ARCH" = "x86_64" ]; then
   if ! command -v docker >/dev/null 2>&1; then
     echo
     echo "Docker が見つかりません。"
-    echo "Homebrew を使う場合:"
-    echo "  brew install --cask docker"
+    MAC_MAJOR="$(sw_vers -productVersion | cut -d. -f1)"
+    if [ "$MAC_MAJOR" -le 12 ]; then
+      echo "このMacは macOS 12 (Monterey) のため、Homebrew の最新 Docker Desktop はインストールできません。"
+      echo "Docker公式リリースノートから Docker Desktop 4.71.0 の『Mac with Intel chip』を手動インストールしてください:"
+      echo "  https://docs.docker.com/desktop/release-notes/#4710"
+    else
+      echo "Homebrew を使う場合:"
+      echo "  brew install --cask docker"
+    fi
     echo
     echo "インストール後に Docker Desktop を起動してから、もう一度 make setup を実行してください。"
     exit 1
