@@ -48,7 +48,7 @@ if [ "$OS" = "Darwin" ] && [ "$ARCH" = "x86_64" ]; then
 IRODORI_HOST=0.0.0.0
 IRODORI_PORT=8088
 IRODORI_TTS_BACKEND=cpu
-IRODORI_HF_CHECKPOINT=Aratako/Irodori-TTS-v4.1-Small
+IRODORI_HF_CHECKPOINT=Aratako/Irodori-TTS-v4.1-Small-MF
 IRODORI_CODEC_REPO=Aratako/Semantic-DACVAE-Japanese-32dim
 IRODORI_MODEL_NAME=irodori-tts
 IRODORI_MODEL_DEVICE=cpu
