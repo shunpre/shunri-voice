@@ -1,6 +1,6 @@
 PYTHON ?= python3
 
-.PHONY: setup voices voice reference shunri install-cli uninstall-cli clean
+.PHONY: setup voices voice reference shunri install-cli uninstall-cli worker-once install-reel-worker uninstall-reel-worker clean
 
 setup:
 	bash scripts/bootstrap.sh
@@ -24,6 +24,15 @@ install-cli:
 
 uninstall-cli:
 	rm -f "$(HOME)/.local/bin/shunri"
+
+worker-once:
+	$(PYTHON) scripts/process_reel_jobs.py
+
+install-reel-worker:
+	bash scripts/install_reel_worker.sh
+
+uninstall-reel-worker:
+	bash scripts/uninstall_reel_worker.sh
 
 clean:
 	rm -rf outputs
