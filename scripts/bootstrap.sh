@@ -24,8 +24,8 @@ if [ "$OS" = "Darwin" ] && [ "$ARCH" = "x86_64" ]; then
     MAC_MAJOR="$(sw_vers -productVersion | cut -d. -f1)"
     if [ "$MAC_MAJOR" -le 12 ]; then
       echo "このMacは macOS 12 (Monterey) のため、Homebrew の最新 Docker Desktop はインストールできません。"
-      echo "Docker公式リリースノートから Docker Desktop 4.71.0 の『Mac with Intel chip』を手動インストールしてください:"
-      echo "  https://docs.docker.com/desktop/release-notes/#4710"
+      echo "Docker公式リリースノートから Docker Desktop 4.41.2 の『Mac with Intel chip』を手動インストールしてください:"
+      echo "  https://desktop.docker.com/mac/main/amd64/191736/Docker.dmg"
     else
       echo "Homebrew を使う場合:"
       echo "  brew install --cask docker"
