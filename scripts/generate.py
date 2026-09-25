@@ -4,14 +4,19 @@ from __future__ import annotations
 import argparse
 import json
 import platform
+import shutil
 import subprocess
 import sys
+import urllib.error
+import urllib.request
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 CONFIG_PATH = ROOT / "config" / "voices.json"
 DEFAULT_UPSTREAM = ROOT / ".vendor" / "Irodori-TTS"
+DEFAULT_SERVER = ROOT / ".vendor" / "Irodori-TTS-Server"
 DEFAULT_OUTPUT = ROOT / "outputs"
+API_URL = "http://127.0.0.1:8088/v1/audio/speech"
 
 
 def parse_args() -> argparse.Namespace:
@@ -24,6 +29,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--device", choices=["auto", "mps", "cpu"], default="auto")
     parser.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT)
     parser.add_argument("--upstream", type=Path, default=DEFAULT_UPSTREAM)
+    parser.add_argument("--server-dir", type=Path, default=DEFAULT_SERVER)
     parser.add_argument("--model", help="Override Hugging Face checkpoint.")
     return parser.parse_args()
 
@@ -45,6 +51,10 @@ def resolve_text(args: argparse.Namespace) -> str:
     return text
 
 
+def is_intel_mac() -> bool:
+    return platform.system() == "Darwin" and platform.machine().lower() == "x86_64"
+
+
 def resolve_device(requested: str) -> str:
     if requested != "auto":
         return requested
@@ -53,7 +63,80 @@ def resolve_device(requested: str) -> str:
     return "cpu"
 
 
-def run_one(name: str, preset: dict, text: str, model: str, upstream: Path, output_dir: Path, reference: Path | None, device: str) -> None:
+def prepare_reference_for_server(reference: Path | None, server_dir: Path) -> str:
+    if reference is None:
+        return "none"
+    if not reference.exists():
+        raise SystemExit(f"参照音声が見つかりません: {reference}")
+
+    voices_dir = server_dir / "voices"
+    voices_dir.mkdir(parents=True, exist_ok=True)
+    target = voices_dir / "shunri.wav"
+    shutil.copy2(reference, target)
+    return "shunri"
+
+
+def run_via_server(
+    *,
+    name: str,
+    preset: dict,
+    text: str,
+    output_dir: Path,
+    reference: Path | None,
+    server_dir: Path,
+) -> None:
+    if not server_dir.exists():
+        raise SystemExit("Intel Mac 用 Irodori-TTS-Server がありません。先に make setup を実行してください。")
+
+    output_dir.mkdir(parents=True, exist_ok=True)
+    output = output_dir / f"{name}.wav"
+    caption = preset["caption"]
+    voice = prepare_reference_for_server(reference, server_dir)
+
+    payload = {
+        "model": "irodori-tts",
+        "input": text,
+        "voice": voice,
+        "response_format": "wav",
+        "irodori": {
+            "caption": caption,
+            "seed": int(preset.get("seed", 1234)),
+        },
+    }
+
+    request = urllib.request.Request(
+        API_URL,
+        data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+
+    print(f"\n=== {name} ===")
+    print("runtime: Docker CPU API")
+    print(f"output: {output}")
+    print(f"caption: {caption}")
+
+    try:
+        with urllib.request.urlopen(request, timeout=7200) as response:
+            output.write_bytes(response.read())
+    except urllib.error.URLError as exc:
+        raise SystemExit(
+            "Irodori-TTS API に接続できません。Docker Desktop が起動しているか確認し、"
+            "make setup をもう一度実行してください。"
+        ) from exc
+
+
+def run_local(
+    *,
+    name: str,
+    preset: dict,
+    text: str,
+    model: str,
+    upstream: Path,
+    output_dir: Path,
+    reference: Path | None,
+    device: str,
+) -> None:
     infer = upstream / "infer.py"
     if not infer.exists():
         raise SystemExit("Irodori-TTS が見つかりません。先に make setup を実行してください。")
@@ -81,7 +164,7 @@ def run_one(name: str, preset: dict, text: str, model: str, upstream: Path, outp
         cmd.append("--no-ref")
 
     print(f"\n=== {name} ===")
-    print(f"device: {device}")
+    print(f"runtime: local {device}")
     print(f"output: {output}")
     print(f"caption: {caption}")
     subprocess.run(cmd, cwd=upstream, check=True)
@@ -102,14 +185,35 @@ def main() -> int:
             raise SystemExit(f"不明なpreset: {args.preset}")
         selected = [(args.preset, presets[args.preset])]
 
+    runtime = "docker-api" if is_intel_mac() else "local"
     reference_label = str(args.reference) if args.reference else "none (Voice Design)"
+
     print("Shunri Voice Lab")
     print(f"model: {model}")
-    print(f"device: {device}")
+    print(f"runtime: {runtime}")
     print(f"reference: {reference_label}")
 
     for name, preset in selected:
-        run_one(name, preset, text, model, args.upstream, args.output_dir, args.reference, device)
+        if is_intel_mac():
+            run_via_server(
+                name=name,
+                preset=preset,
+                text=text,
+                output_dir=args.output_dir,
+                reference=args.reference,
+                server_dir=args.server_dir,
+            )
+        else:
+            run_local(
+                name=name,
+                preset=preset,
+                text=text,
+                model=model,
+                upstream=args.upstream,
+                output_dir=args.output_dir,
+                reference=args.reference,
+                device=device,
+            )
 
     print("\n完了しました。")
     for name, _ in selected:
