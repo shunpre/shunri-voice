@@ -34,9 +34,9 @@ macOS 13以降なら Homebrew で導入できます。
 
     brew install --cask docker
 
-macOS 12 Monterey では Homebrew の最新 Docker Desktop は入らないため、Docker公式リリースノートから **Docker Desktop 4.71.0 / Mac with Intel chip** を手動インストールしてください。
+macOS 12 Monterey では Homebrew の最新 Docker Desktop は入らないため、Docker公式リリースノートから **Docker Desktop 4.41.2 / Mac with Intel chip** を手動インストールしてください。
 
-https://docs.docker.com/desktop/release-notes/#4710
+https://desktop.docker.com/mac/main/amd64/191736/Docker.dmg
 
 Docker Desktop を起動してから:
 
