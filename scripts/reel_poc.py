@@ -16,6 +16,7 @@ ROOT = Path(__file__).resolve().parents[1]
 CONFIG = ROOT / "config" / "reel_profile.json"
 MOTION_MANIFEST = ROOT / "config" / "motion_bank.json"
 MOTION_PREP = ROOT / "scripts" / "prepare_motion_bank.py"
+LIPSYNC = ROOT / "scripts" / "lipsync_scene.py"
 CLI = ROOT / "scripts" / "shunri_cli.py"
 RENDER_IMAGE = "shunri-reel-renderer:local"
 RENDER_DOCKERFILE_DIR = ROOT / "docker" / "reel-renderer"
@@ -58,6 +59,12 @@ def parse_args() -> argparse.Namespace:
         "--static-presenter",
         action="store_true",
         help="Use the old single still presenter instead of the Motion Bank.",
+    )
+    parser.add_argument(
+        "--lipsync-backend",
+        choices=["auto", "passthrough", "external"],
+        default="auto",
+        help="Per-scene lip-sync backend. auto uses SHUNRI_LIPSYNC_COMMAND when configured.",
     )
     return parser.parse_args()
 
@@ -146,9 +153,23 @@ def motion_variant_ids() -> list[str]:
     return [str(item["id"]) for item in data.get("variants", [])]
 
 
+def bank_is_complete(path: Path, variants: list[str]) -> bool:
+    return path.exists() and all((path / f"{variant}.mp4").exists() for variant in variants)
+
+
 def motion_bank_dir() -> Path:
     data = json.loads(MOTION_MANIFEST.read_text(encoding="utf-8"))
-    return Path(data["outputDir"]).expanduser()
+    variants = [str(item["id"]) for item in data.get("variants", [])]
+
+    production_raw = data.get("productionDir")
+    if data.get("preferProduction", True) and production_raw:
+        production = Path(str(production_raw)).expanduser()
+        if bank_is_complete(production, variants):
+            print(f"Motion Bank: production ({production})")
+            return production
+
+    generated = Path(data["outputDir"]).expanduser()
+    return generated
 
 
 def assign_motion_variants(timeline: list[dict]) -> list[dict]:
@@ -347,34 +368,105 @@ def copy_motion_bank(job_dir: Path, timeline: list[dict]) -> Path:
     return dest
 
 
-def render_motion_track(job_dir: Path, timeline: list[dict]) -> Path:
-    segments_dir = job_dir / "segments"
-    segments_dir.mkdir(parents=True, exist_ok=True)
-    concat_lines: list[str] = []
-
-    for index, scene in enumerate(timeline, start=1):
-        variant = str(scene["presenterVariant"])
-        scene_duration = max(0.25, float(scene["end"]) - float(scene["start"]))
-        output_name = f"segment-{index:02d}.mp4"
-
-        cmd = [
+def extract_scene_audio(job_dir: Path, start: float, duration: float, output_name: str) -> Path:
+    audio_dir = job_dir / "scene-audio"
+    audio_dir.mkdir(parents=True, exist_ok=True)
+    output = audio_dir / output_name
+    subprocess.run(
+        [
             "docker", "run", "--rm",
             "-v", f"{job_dir.resolve()}:/work",
             RENDER_IMAGE,
             "-y",
-            "-stream_loop", "-1",
-            "-i", f"/work/motion-bank/{variant}.mp4",
-            "-t", f"{scene_duration:.3f}",
-            "-an",
-            "-r", "30",
-            "-c:v", "libx264",
-            "-preset", "veryfast",
-            "-crf", "20",
-            "-pix_fmt", "yuv420p",
-            f"/work/segments/{output_name}",
-        ]
-        subprocess.run(cmd, check=True)
-        concat_lines.append(f"file '{output_name}'")
+            "-ss", f"{start:.3f}",
+            "-t", f"{duration:.3f}",
+            "-i", "/work/narration.wav",
+            "-ac", "1",
+            "-ar", "48000",
+            "-c:a", "pcm_s16le",
+            f"/work/scene-audio/{output_name}",
+        ],
+        check=True,
+    )
+    return output
+
+
+def render_motion_track(job_dir: Path, timeline: list[dict], lipsync_backend: str) -> Path:
+    segments_dir = job_dir / "segments"
+    raw_dir = job_dir / "segments-raw"
+    synced_dir = job_dir / "segments-synced"
+    segments_dir.mkdir(parents=True, exist_ok=True)
+    raw_dir.mkdir(parents=True, exist_ok=True)
+    synced_dir.mkdir(parents=True, exist_ok=True)
+    concat_lines: list[str] = []
+
+    for index, scene in enumerate(timeline, start=1):
+        variant = str(scene["presenterVariant"])
+        scene_start = float(scene["start"])
+        scene_duration = max(0.25, float(scene["end"]) - scene_start)
+        raw_name = f"raw-{index:02d}.mp4"
+        synced_name = f"synced-{index:02d}.mp4"
+        final_name = f"segment-{index:02d}.mp4"
+
+        subprocess.run(
+            [
+                "docker", "run", "--rm",
+                "-v", f"{job_dir.resolve()}:/work",
+                RENDER_IMAGE,
+                "-y",
+                "-stream_loop", "-1",
+                "-i", f"/work/motion-bank/{variant}.mp4",
+                "-t", f"{scene_duration:.3f}",
+                "-an",
+                "-r", "30",
+                "-c:v", "libx264",
+                "-preset", "veryfast",
+                "-crf", "20",
+                "-pix_fmt", "yuv420p",
+                f"/work/segments-raw/{raw_name}",
+            ],
+            check=True,
+        )
+
+        scene_audio = extract_scene_audio(
+            job_dir,
+            scene_start,
+            scene_duration,
+            f"scene-{index:02d}.wav",
+        )
+
+        subprocess.run(
+            [
+                sys.executable,
+                str(LIPSYNC),
+                "--video", str(raw_dir / raw_name),
+                "--audio", str(scene_audio),
+                "--output", str(synced_dir / synced_name),
+                "--backend", lipsync_backend,
+            ],
+            cwd=ROOT,
+            check=True,
+        )
+
+        subprocess.run(
+            [
+                "docker", "run", "--rm",
+                "-v", f"{job_dir.resolve()}:/work",
+                RENDER_IMAGE,
+                "-y",
+                "-i", f"/work/segments-synced/{synced_name}",
+                "-t", f"{scene_duration:.3f}",
+                "-an",
+                "-r", "30",
+                "-c:v", "libx264",
+                "-preset", "veryfast",
+                "-crf", "20",
+                "-pix_fmt", "yuv420p",
+                f"/work/segments/{final_name}",
+            ],
+            check=True,
+        )
+        concat_lines.append(f"file '{final_name}'")
 
     concat_file = segments_dir / "concat.txt"
     concat_file.write_text("\n".join(concat_lines) + "\n", encoding="utf-8")
@@ -396,10 +488,15 @@ def render_motion_track(job_dir: Path, timeline: list[dict]) -> Path:
     )
     return presenter_track
 
-
-def render_motion(job_dir: Path, duration: float, output_name: str, timeline: list[dict]) -> None:
+def render_motion(
+    job_dir: Path,
+    duration: float,
+    output_name: str,
+    timeline: list[dict],
+    lipsync_backend: str,
+) -> None:
     copy_motion_bank(job_dir, timeline)
-    render_motion_track(job_dir, timeline)
+    render_motion_track(job_dir, timeline, lipsync_backend)
 
     cmd = [
         "docker", "run", "--rm",
@@ -487,7 +584,7 @@ def main() -> int:
         render_static(job_dir, duration, output.name)
     else:
         print("Motion Bank を使ってPresenterカットを自動構成します。")
-        render_motion(job_dir, duration, output.name, timeline)
+        render_motion(job_dir, duration, output.name, timeline, args.lipsync_backend)
     shutil.copy2(temp_output, output)
 
     print()
@@ -500,8 +597,11 @@ def main() -> int:
     if args.static_presenter:
         print("注: --static-presenter のため旧静止画モードです。")
     else:
-        print("Phase-2: Motion Bank を使ったPresenterカット構成まで有効です。")
-        print("次工程で同じMotion Bankのclipを本物のジェスチャー＋lip-sync素材へ差し替えます。")
+        print("Phase-3: Production Motion Bank / per-scene lip-sync adapter に対応しています。")
+        if args.lipsync_backend == "auto":
+            print("lip-sync: SHUNRI_LIPSYNC_COMMAND があればexternal、なければpassthroughです。")
+        else:
+            print(f"lip-sync backend: {args.lipsync_backend}")
     return 0
 
 
