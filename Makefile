@@ -1,6 +1,6 @@
 PYTHON ?= python3
 
-.PHONY: setup voices voice reference shunri install-cli uninstall-cli worker-once install-reel-worker uninstall-reel-worker clean
+.PHONY: setup voices voice reference shunri install-cli uninstall-cli worker-once install-reel-worker uninstall-reel-worker reel-renderer-setup reel-poc clean
 
 setup:
 	bash scripts/bootstrap.sh
@@ -33,6 +33,13 @@ install-reel-worker:
 
 uninstall-reel-worker:
 	bash scripts/uninstall_reel_worker.sh
+
+reel-renderer-setup:
+	docker build -t shunri-reel-renderer:local docker/reel-renderer
+
+reel-poc:
+	@test -n "$(FILE)" || (echo '使い方: make reel-poc FILE="/path/to/script.txt"' && exit 1)
+	$(PYTHON) scripts/reel_poc.py --file "$(FILE)"
 
 clean:
 	rm -rf outputs

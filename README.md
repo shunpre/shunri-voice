@@ -200,3 +200,47 @@ Intel Mac では Irodori-TTS API が停止していれば `shunri` コマンド�
 - downstream用MP3: private scheduler repo の `runtime/shunri-reel-assets/<job-id>/narration.mp3`
 
 参照声 `references/shunri.wav` はローカルだけに残し、GitHubには保存しません。
+
+
+## Phase 1 — Reel PoC
+
+瞬理の確定台本から、以下を1コマンドで生成する最初の実働パイプラインです。
+
+    確定台本
+    → 瞬理の正式声
+    → シーン分割
+    → 日本語字幕
+    → 1080x1920 MP4
+
+最初のPoCでは人物は正準の瞬理静止画を使います。次工程でMotion Bankを接続して、参考動画のようなジェスチャー / リップシンクへ進めます。
+
+前提:
+
+    ~/shun-x-scheduler/assets/instagram/character/reference/canonical_front.jpeg
+
+が存在すること。
+
+実行:
+
+    cd ~/shunri-voice
+    git pull origin main
+    make reel-poc FILE="$HOME/Desktop/script.txt"
+
+初回のみReel renderer用Dockerイメージを自動構築します。
+
+標準出力:
+
+    ~/shunri-voice/outputs/reel-poc/shunri-reel-poc.mp4
+
+途中生成物:
+
+    ~/shunri-voice/outputs/reel-poc/.poc-work/narration.wav
+    ~/shunri-voice/outputs/reel-poc/.poc-work/scene-plan.json
+    ~/shunri-voice/outputs/reel-poc/.poc-work/captions.ass
+
+設計上の重要点:
+- approved scriptは書き換えない
+- 音声は必ず `references/shunri.wav`
+- 字幕文字はAI画像へ焼き込まずrendererが描画
+- 日本語フォントはrenderer DockerにNoto CJKを入れて固定
+- 1080x1920 / 30fps / H.264 + AAC
