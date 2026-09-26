@@ -21,6 +21,7 @@ LOCAL_JOB_OUTPUTS = ROOT / "outputs" / "jobs"
 CLI = ROOT / "scripts" / "shunri_cli.py"
 REEL_RENDERER = ROOT / "scripts" / "reel_poc.py"
 DOCKER_IMAGE = "irodori-openai-tts:local"
+REEL_RENDER_IMAGE = "shunri-reel-renderer:local"
 
 
 def now_iso() -> str:
@@ -153,6 +154,28 @@ def convert_mp3(source: Path, destination: Path) -> None:
         "-i", f"/input/{source.name}",
         "-codec:a", "libmp3lame",
         "-q:a", "2",
+        f"/output/{destination.name}",
+    ])
+
+
+def create_review_proxy(source: Path, destination: Path) -> None:
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    run([
+        "docker", "run", "--rm",
+        "-v", f"{source.parent.resolve()}:/input:ro",
+        "-v", f"{destination.parent.resolve()}:/output",
+        REEL_RENDER_IMAGE,
+        "-y",
+        "-i", f"/input/{source.name}",
+        "-vf", "scale=720:1280:force_original_aspect_ratio=decrease",
+        "-r", "30",
+        "-c:v", "libx264",
+        "-preset", "veryfast",
+        "-crf", "28",
+        "-pix_fmt", "yuv420p",
+        "-c:a", "aac",
+        "-b:a", "128k",
+        "-movflags", "+faststart",
         f"/output/{destination.name}",
     ])
 
@@ -290,8 +313,8 @@ def process_render_job(job: dict, bridge: Path) -> dict:
     asset_dir = bridge / asset_dir_rel
     asset_dir.mkdir(parents=True, exist_ok=True)
 
-    video_asset = asset_dir / "reel.mp4"
-    shutil.copy2(video_path, video_asset)
+    video_asset = asset_dir / "reel-review.mp4"
+    create_review_proxy(video_path, video_asset)
 
     plan_asset = asset_dir / "scene-plan.json"
     shutil.copy2(scene_plan, plan_asset)
@@ -310,7 +333,8 @@ def process_render_job(job: dict, bridge: Path) -> dict:
         "action": "render_reel",
         "status": "completed",
         "voice": "shunri",
-        "asset": (asset_dir_rel / "reel.mp4").as_posix(),
+        "asset": (asset_dir_rel / "reel-review.mp4").as_posix(),
+        "assetRole": "review-proxy",
         "narrationAsset": (asset_dir_rel / "narration.mp3").as_posix(),
         "scenePlanAsset": (asset_dir_rel / "scene-plan.json").as_posix(),
         "qaAsset": (asset_dir_rel / "qa-report.json").as_posix(),
