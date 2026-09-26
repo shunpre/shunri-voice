@@ -115,3 +115,25 @@ Narration automation is implemented first. Visual generation and final render sh
 ## Safety / provenance
 
 The canonical voice is for the original fictional AI PR character 瞬理. Do not substitute or clone a real person's voice without explicit permission.
+
+
+## Locked Reel engine
+
+The canonical production contract for finished Shunri Reels is:
+
+    docs/SHUNRI_REEL_ENGINE_SPEC.md
+    config/reel_profile.json
+
+When moving beyond narration into finished video, follow that spec instead of inventing a generic
+short-video workflow.
+
+The v1 quality target is a presenter-led Reel with:
+- canonical Shunri voice
+- word-aligned captions
+- stable Shunri presenter identity
+- pose / expression variation
+- screenshot / diagram inserts
+- BGM ducking
+- deterministic 9:16 rendering
+
+The renderer must treat approved copy as immutable input.

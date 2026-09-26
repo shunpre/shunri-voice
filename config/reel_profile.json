@@ -1,0 +1,97 @@
+{
+  "version": 1,
+  "profile": "shunri-reel-v1",
+  "output": {
+    "width": 1080,
+    "height": 1920,
+    "fps": 30,
+    "container": "mp4",
+    "videoCodec": "h264",
+    "audioCodec": "aac"
+  },
+  "voice": {
+    "id": "shunri",
+    "canonicalReference": "~/shunri-voice/references/shunri.wav",
+    "preset": "clone",
+    "fallbackVoiceDesign": false
+  },
+  "sceneTypes": [
+    "talk",
+    "talk_overlay",
+    "broll",
+    "emphasis",
+    "cta"
+  ],
+  "captions": {
+    "rendererOwned": true,
+    "maxLines": 2,
+    "avoidTextInsideGeneratedImages": true,
+    "wordTimestampAlignment": "whisper-fallback",
+    "duplicateSubtitlePolicy": "reject"
+  },
+  "pacing": {
+    "defaultVisualChangeSeconds": [
+      2,
+      5
+    ],
+    "insertSeconds": [
+      1,
+      3
+    ],
+    "emphasisSeconds": [
+      0.6,
+      2
+    ]
+  },
+  "transitions": {
+    "default": "cut",
+    "allowed": [
+      "cut",
+      "subtle-push-in",
+      "punch-in",
+      "crossfade"
+    ],
+    "decorativeTransitions": false
+  },
+  "presenter": {
+    "strategy": "motion-bank-first",
+    "requiredVariants": [
+      "neutral-talk",
+      "open-hand",
+      "point-up",
+      "point-side",
+      "think",
+      "small-nod",
+      "explain-both-hands",
+      "cta-forward"
+    ]
+  },
+  "visuals": {
+    "priority": [
+      "real-shunlp-demo-screenshot",
+      "approved-brand-asset",
+      "generated-diagram",
+      "generated-broll"
+    ],
+    "randomStockFallback": false
+  },
+  "audio": {
+    "narrationIsMaster": true,
+    "bgmAutoDuck": true,
+    "repetitiveWhoosh": false
+  },
+  "qa": {
+    "rejectOn": [
+      "missing-narration",
+      "wrong-voice",
+      "subtitle-narration-mismatch",
+      "duplicate-subtitles",
+      "unsafe-text-position",
+      "clipped-audio",
+      "broken-media",
+      "wrong-aspect-ratio",
+      "wrong-shunri-identity",
+      "approved-script-mutated"
+    ]
+  }
+}
