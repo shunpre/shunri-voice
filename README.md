@@ -385,7 +385,7 @@ local workerは今後:
 
 の両方を処理できます。
 
-`render_reel` は完成MP4、narration.mp3、scene-plan.json、captions.ass、qa-report.jsonを
-private scheduler repositoryへ返します。
+`render_reel` は軽量 review proxy、narration.mp3、scene-plan.json、captions.ass、qa-report.jsonを
+private scheduler repositoryへ返します。1080x1920の完成masterはMacローカルに保持し、Git履歴を動画masterで肥大化させません。
 
-これにより外部動画ツールを決める前でも、GitHub queueから「確定台本→完成Reel」まで通せます。
+これにより外部動画ツールを決める前でも、GitHub queueから「確定台本→完成Reel→Human Gate用レビュー」まで通せます。
