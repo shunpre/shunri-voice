@@ -14,6 +14,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 CONFIG = ROOT / "config" / "reel_profile.json"
+MOTION_MANIFEST = ROOT / "config" / "motion_bank.json"
+MOTION_PREP = ROOT / "scripts" / "prepare_motion_bank.py"
 CLI = ROOT / "scripts" / "shunri_cli.py"
 RENDER_IMAGE = "shunri-reel-renderer:local"
 RENDER_DOCKERFILE_DIR = ROOT / "docker" / "reel-renderer"
@@ -51,6 +53,11 @@ def parse_args() -> argparse.Namespace:
         "--skip-build",
         action="store_true",
         help="Skip Docker renderer build when the image already exists.",
+    )
+    parser.add_argument(
+        "--static-presenter",
+        action="store_true",
+        help="Use the old single still presenter instead of the Motion Bank.",
     )
     return parser.parse_args()
 
@@ -134,6 +141,43 @@ def wrap_caption(text: str, max_chars: int = 16) -> str:
     return clean[:max_chars] + r"\N" + clean[max_chars : max_chars * 2]
 
 
+def motion_variant_ids() -> list[str]:
+    data = json.loads(MOTION_MANIFEST.read_text(encoding="utf-8"))
+    return [str(item["id"]) for item in data.get("variants", [])]
+
+
+def motion_bank_dir() -> Path:
+    data = json.loads(MOTION_MANIFEST.read_text(encoding="utf-8"))
+    return Path(data["outputDir"]).expanduser()
+
+
+def assign_motion_variants(timeline: list[dict]) -> list[dict]:
+    variants = motion_variant_ids()
+    regular = [v for v in variants if v != "cta-forward"]
+    if not regular:
+        regular = ["neutral-talk"]
+
+    for index, scene in enumerate(timeline):
+        if scene.get("type") == "cta" and "cta-forward" in variants:
+            scene["presenterVariant"] = "cta-forward"
+        else:
+            scene["presenterVariant"] = regular[index % len(regular)]
+    return timeline
+
+
+def ensure_motion_bank() -> Path:
+    bank = motion_bank_dir()
+    variants = motion_variant_ids()
+    missing = [v for v in variants if not (bank / f"{v}.mp4").exists()]
+    if missing:
+        print("瞬理 Motion Bank が未準備です。初回生成します...")
+        subprocess.run([sys.executable, str(MOTION_PREP)], cwd=ROOT, check=True)
+        missing = [v for v in variants if not (bank / f"{v}.mp4").exists()]
+        if missing:
+            raise SystemExit("Motion Bank生成後も不足しています: " + ", ".join(missing))
+    return bank
+
+
 def build_timeline(phrases: list[str], duration: float) -> list[dict]:
     if not phrases:
         return []
@@ -155,7 +199,7 @@ def build_timeline(phrases: list[str], duration: float) -> list[dict]:
             }
         )
         cursor = end
-    return timeline
+    return assign_motion_variants(timeline)
 
 
 def write_plan(path: Path, script: str, duration: float, timeline: list[dict]) -> None:
@@ -254,7 +298,7 @@ def ensure_renderer_image(skip_build: bool) -> None:
     )
 
 
-def render(job_dir: Path, duration: float, output_name: str) -> None:
+def render_static(job_dir: Path, duration: float, output_name: str) -> None:
     filter_graph = (
         "[0:v]split=2[bg0][fg0];"
         "[bg0]scale=1080:1920:force_original_aspect_ratio=increase,"
@@ -265,49 +309,120 @@ def render(job_dir: Path, duration: float, output_name: str) -> None:
     )
 
     cmd = [
-        "docker",
-        "run",
-        "--rm",
-        "-v",
-        f"{job_dir.resolve()}:/work",
+        "docker", "run", "--rm",
+        "-v", f"{job_dir.resolve()}:/work",
         RENDER_IMAGE,
         "-y",
-        "-loop",
-        "1",
-        "-framerate",
-        "30",
-        "-i",
-        "/work/presenter.jpg",
-        "-i",
-        "/work/narration.wav",
-        "-filter_complex",
-        filter_graph,
-        "-map",
-        "[outv]",
-        "-map",
-        "1:a:0",
-        "-t",
-        f"{duration:.3f}",
-        "-r",
-        "30",
-        "-c:v",
-        "libx264",
-        "-preset",
-        "veryfast",
-        "-crf",
-        "20",
-        "-pix_fmt",
-        "yuv420p",
-        "-c:a",
-        "aac",
-        "-b:a",
-        "192k",
-        "-movflags",
-        "+faststart",
+        "-loop", "1",
+        "-framerate", "30",
+        "-i", "/work/presenter.jpg",
+        "-i", "/work/narration.wav",
+        "-filter_complex", filter_graph,
+        "-map", "[outv]",
+        "-map", "1:a:0",
+        "-t", f"{duration:.3f}",
+        "-r", "30",
+        "-c:v", "libx264",
+        "-preset", "veryfast",
+        "-crf", "20",
+        "-pix_fmt", "yuv420p",
+        "-c:a", "aac",
+        "-b:a", "192k",
+        "-movflags", "+faststart",
         f"/work/{output_name}",
     ]
     subprocess.run(cmd, check=True)
 
+
+def copy_motion_bank(job_dir: Path, timeline: list[dict]) -> Path:
+    source_dir = ensure_motion_bank()
+    dest = job_dir / "motion-bank"
+    dest.mkdir(parents=True, exist_ok=True)
+    needed = sorted({str(scene["presenterVariant"]) for scene in timeline})
+    for variant in needed:
+        source = source_dir / f"{variant}.mp4"
+        if not source.exists():
+            raise SystemExit(f"Motion Bank clip がありません: {source}")
+        shutil.copy2(source, dest / source.name)
+    return dest
+
+
+def render_motion_track(job_dir: Path, timeline: list[dict]) -> Path:
+    segments_dir = job_dir / "segments"
+    segments_dir.mkdir(parents=True, exist_ok=True)
+    concat_lines: list[str] = []
+
+    for index, scene in enumerate(timeline, start=1):
+        variant = str(scene["presenterVariant"])
+        scene_duration = max(0.25, float(scene["end"]) - float(scene["start"]))
+        output_name = f"segment-{index:02d}.mp4"
+
+        cmd = [
+            "docker", "run", "--rm",
+            "-v", f"{job_dir.resolve()}:/work",
+            RENDER_IMAGE,
+            "-y",
+            "-stream_loop", "-1",
+            "-i", f"/work/motion-bank/{variant}.mp4",
+            "-t", f"{scene_duration:.3f}",
+            "-an",
+            "-r", "30",
+            "-c:v", "libx264",
+            "-preset", "veryfast",
+            "-crf", "20",
+            "-pix_fmt", "yuv420p",
+            f"/work/segments/{output_name}",
+        ]
+        subprocess.run(cmd, check=True)
+        concat_lines.append(f"file '{output_name}'")
+
+    concat_file = segments_dir / "concat.txt"
+    concat_file.write_text("\n".join(concat_lines) + "\n", encoding="utf-8")
+    presenter_track = job_dir / "presenter-track.mp4"
+
+    subprocess.run(
+        [
+            "docker", "run", "--rm",
+            "-v", f"{job_dir.resolve()}:/work",
+            RENDER_IMAGE,
+            "-y",
+            "-f", "concat",
+            "-safe", "0",
+            "-i", "/work/segments/concat.txt",
+            "-c", "copy",
+            "/work/presenter-track.mp4",
+        ],
+        check=True,
+    )
+    return presenter_track
+
+
+def render_motion(job_dir: Path, duration: float, output_name: str, timeline: list[dict]) -> None:
+    copy_motion_bank(job_dir, timeline)
+    render_motion_track(job_dir, timeline)
+
+    cmd = [
+        "docker", "run", "--rm",
+        "-v", f"{job_dir.resolve()}:/work",
+        RENDER_IMAGE,
+        "-y",
+        "-i", "/work/presenter-track.mp4",
+        "-i", "/work/narration.wav",
+        "-vf", "subtitles=/work/captions.ass:fontsdir=/usr/share/fonts/opentype/noto",
+        "-map", "0:v:0",
+        "-map", "1:a:0",
+        "-t", f"{duration:.3f}",
+        "-r", "30",
+        "-c:v", "libx264",
+        "-preset", "veryfast",
+        "-crf", "20",
+        "-pix_fmt", "yuv420p",
+        "-c:a", "aac",
+        "-b:a", "192k",
+        "-movflags", "+faststart",
+        f"/work/{output_name}",
+    ]
+    subprocess.run(cmd, check=True)
 
 def main() -> int:
     args = parse_args()
@@ -368,7 +483,11 @@ def main() -> int:
     print("[4/4] 1080x1920 MP4 をレンダリング")
     output.parent.mkdir(parents=True, exist_ok=True)
     temp_output = job_dir / output.name
-    render(job_dir, duration, output.name)
+    if args.static_presenter:
+        render_static(job_dir, duration, output.name)
+    else:
+        print("Motion Bank を使ってPresenterカットを自動構成します。")
+        render_motion(job_dir, duration, output.name, timeline)
     shutil.copy2(temp_output, output)
 
     print()
@@ -378,7 +497,11 @@ def main() -> int:
     print(f"- scene plan: {plan_path}")
     print(f"- captions: {ass_path}")
     print()
-    print("注: このPoCはまだ静止画Presenterです。次工程で瞬理Motion Bankを接続します。")
+    if args.static_presenter:
+        print("注: --static-presenter のため旧静止画モードです。")
+    else:
+        print("Phase-2: Motion Bank を使ったPresenterカット構成まで有効です。")
+        print("次工程で同じMotion Bankのclipを本物のジェスチャー＋lip-sync素材へ差し替えます。")
     return 0
 
 
