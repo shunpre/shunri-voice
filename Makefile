@@ -1,6 +1,6 @@
 PYTHON ?= python3
 
-.PHONY: setup voices voice reference shunri install-cli uninstall-cli worker-once install-reel-worker uninstall-reel-worker reel-renderer-setup motion-bank reel-poc clean
+.PHONY: setup voices voice reference shunri install-cli uninstall-cli worker-once install-reel-worker uninstall-reel-worker reel-renderer-setup motion-bank import-motion-bank reel-poc reel-poc-lipsync clean
 
 setup:
 	bash scripts/bootstrap.sh
@@ -40,9 +40,18 @@ reel-renderer-setup:
 motion-bank:
 	$(PYTHON) scripts/prepare_motion_bank.py
 
+import-motion-bank:
+	@test -n "$(DIR)" || (echo '使い方: make import-motion-bank DIR="/path/to/clips"' && exit 1)
+	$(PYTHON) scripts/import_motion_bank.py "$(DIR)"
+
 reel-poc:
 	@test -n "$(FILE)" || (echo '使い方: make reel-poc FILE="/path/to/script.txt"' && exit 1)
 	$(PYTHON) scripts/reel_poc.py --file "$(FILE)"
+
+reel-poc-lipsync:
+	@test -n "$(FILE)" || (echo '使い方: make reel-poc-lipsync FILE="/path/to/script.txt"' && exit 1)
+	@test -n "$SHUNRI_LIPSYNC_COMMAND" || (echo 'SHUNRI_LIPSYNC_COMMAND が未設定です' && exit 1)
+	$(PYTHON) scripts/reel_poc.py --file "$(FILE)" --lipsync-backend external
 
 clean:
 	rm -rf outputs

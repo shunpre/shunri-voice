@@ -46,5 +46,7 @@
       "source": "assets/instagram/character/reference/canonical_front.jpeg",
       "motion": "push-in-strong"
     }
-  ]
+  ],
+  "productionDir": "~/shunri-voice/assets/motion-bank-production",
+  "preferProduction": true
 }

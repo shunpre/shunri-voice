@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "profile": "shunri-lipsync-v1",
+  "backend": "auto",
+  "externalCommandEnv": "SHUNRI_LIPSYNC_COMMAND",
+  "commandPlaceholders": [
+    "{video}",
+    "{audio}",
+    "{output}"
+  ],
+  "fallback": "passthrough",
+  "notes": [
+    "Use an external GPU/hosted lip-sync engine when configured.",
+    "Without SHUNRI_LIPSYNC_COMMAND, preserve the motion clip and continue rendering."
+  ]
+}
