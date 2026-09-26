@@ -12,11 +12,14 @@ import time
 import wave
 from pathlib import Path
 
+from caption_timing import align_phrases
+
 ROOT = Path(__file__).resolve().parents[1]
 CONFIG = ROOT / "config" / "reel_profile.json"
 MOTION_MANIFEST = ROOT / "config" / "motion_bank.json"
 MOTION_PREP = ROOT / "scripts" / "prepare_motion_bank.py"
 LIPSYNC = ROOT / "scripts" / "lipsync_scene.py"
+QA = ROOT / "scripts" / "qa_reel.py"
 CLI = ROOT / "scripts" / "shunri_cli.py"
 RENDER_IMAGE = "shunri-reel-renderer:local"
 RENDER_DOCKERFILE_DIR = ROOT / "docker" / "reel-renderer"
@@ -65,6 +68,21 @@ def parse_args() -> argparse.Namespace:
         choices=["auto", "passthrough", "external"],
         default="auto",
         help="Per-scene lip-sync backend. auto uses SHUNRI_LIPSYNC_COMMAND when configured.",
+    )
+    parser.add_argument(
+        "--overlay-dir",
+        type=Path,
+        help="Optional directory containing scene overlays named s01.png, s02.jpg, ...",
+    )
+    parser.add_argument(
+        "--bgm",
+        type=Path,
+        help="Optional BGM file. Narration remains master and BGM is auto-ducked.",
+    )
+    parser.add_argument(
+        "--skip-qa",
+        action="store_true",
+        help="Skip deterministic output QA.",
     )
     return parser.parse_args()
 
@@ -199,28 +217,60 @@ def ensure_motion_bank() -> Path:
     return bank
 
 
-def build_timeline(phrases: list[str], duration: float) -> list[dict]:
+def build_timeline(phrases: list[str], duration: float, narration_path: Path) -> list[dict]:
     if not phrases:
         return []
-    weights = [max(4, len(re.sub(r"\s+", "", p))) for p in phrases]
-    total = sum(weights)
-    cursor = 0.0
+
+    aligned = align_phrases(narration_path, phrases, duration)
     timeline: list[dict] = []
-    for index, (phrase, weight) in enumerate(zip(phrases, weights), start=1):
-        end = duration if index == len(phrases) else cursor + duration * (weight / total)
+    for index, (phrase, (start, end)) in enumerate(zip(phrases, aligned), start=1):
         timeline.append(
             {
                 "id": f"s{index:02d}",
                 "type": "cta" if index == len(phrases) else "talk",
                 "narration": phrase,
                 "caption": phrase,
-                "start": round(cursor, 3),
+                "start": round(start, 3),
                 "end": round(end, 3),
                 "motion": "subtle-push-in" if index % 3 == 0 else "none",
+                "captionAlignment": "speech-energy-pauses-v1",
             }
         )
-        cursor = end
     return assign_motion_variants(timeline)
+
+
+def prepare_overlays(job_dir: Path, timeline: list[dict], overlay_dir: Path | None) -> None:
+    if overlay_dir is None:
+        return
+    source_dir = overlay_dir.expanduser().resolve()
+    if not source_dir.exists():
+        raise SystemExit(f"overlay directory がありません: {source_dir}")
+
+    dest_dir = job_dir / "overlays"
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    extensions = [".png", ".jpg", ".jpeg", ".webp"]
+
+    for scene in timeline:
+        scene_id = str(scene["id"])
+        source = next((source_dir / f"{scene_id}{ext}" for ext in extensions if (source_dir / f"{scene_id}{ext}").exists()), None)
+        if source is None:
+            continue
+        destination = dest_dir / source.name
+        shutil.copy2(source, destination)
+        scene["overlay"] = destination.name
+        if scene.get("type") == "talk":
+            scene["type"] = "talk_overlay"
+
+
+def prepare_bgm(job_dir: Path, bgm: Path | None) -> Path | None:
+    if bgm is None:
+        return None
+    source = bgm.expanduser().resolve()
+    if not source.exists():
+        raise SystemExit(f"BGM が見つかりません: {source}")
+    destination = job_dir / ("bgm" + source.suffix.lower())
+    shutil.copy2(source, destination)
+    return destination
 
 
 def write_plan(path: Path, script: str, duration: float, timeline: list[dict]) -> None:
