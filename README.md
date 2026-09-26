@@ -288,3 +288,31 @@ Phase 1 の静止画Presenterを、瞬理専用のMotion Bankへ置き換えま�
 - 旧静止画モードは --static-presenter で残す
 
 つまり、Motion Bankの品質だけを上げればReel全体のPresenter品質も上がる構造です。
+
+
+## Phase 3 — Production Motion Bank / Lip-sync adapter
+
+本物のジェスチャー動画8本を外部で生成・撮影できたら、同じvariant名でまとめてimportできます。
+
+    make import-motion-bank DIR="$HOME/Desktop/shunri-motion"
+
+8本がそろうと `assets/motion-bank-production/` が自動優先されます。
+
+さらに各sceneごとに瞬理ナレーションWAVを切り出し、lip-sync providerへ渡す段階も実装済みです。
+
+provider未設定時:
+
+    make reel-poc FILE="$HOME/shunri-voice/samples/reel_script.txt"
+
+→ Motion Bankは使うがlip-syncはpassthrough。
+
+外部lip-sync engineを接続する場合:
+
+    export SHUNRI_LIPSYNC_COMMAND='your-command --video {video} --audio {audio} --output {output}'
+    make reel-poc-lipsync FILE="$HOME/shunri-voice/samples/reel_script.txt"
+
+詳細:
+
+    docs/PRODUCTION_MOTION_BANK.md
+
+Intel MacではMuseTalkのようなGPU前提OSSをローカル本番実行しない。lip-sync engineだけ外部GPUへ逃がし、音声生成・scene planning・字幕・最終renderはMac側に残す設計です。
