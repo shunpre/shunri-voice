@@ -244,3 +244,47 @@ Intel Mac では Irodori-TTS API が停止していれば `shunri` コマンド�
 - 字幕文字はAI画像へ焼き込まずrendererが描画
 - 日本語フォントはrenderer DockerにNoto CJKを入れて固定
 - 1080x1920 / 30fps / H.264 + AAC
+
+
+## Phase 2 — Motion Bank
+
+Phase 1 の静止画Presenterを、瞬理専用のMotion Bankへ置き換えます。
+
+初回:
+
+    cd ~/shunri-voice
+    git pull origin main
+    make motion-bank
+
+生成先:
+
+    ~/shunri-voice/assets/motion-bank/
+
+固定variant:
+
+    neutral-talk
+    open-hand
+    point-up
+    point-side
+    think
+    small-nod
+    explain-both-hands
+    cta-forward
+
+現在のv1 bankは正準キャラクター画像から作る軽量モーションです。
+目的はMotion Bankの選択・カット・レンダリング配線を先に完成させることです。
+
+その後:
+
+    make reel-poc FILE="$HOME/shunri-voice/samples/reel_script.txt"
+
+を実行すると、scene-planごとにMotion Bank variantを自動選択し、
+1枚固定ではなくPresenterカットが切り替わる縦動画を生成します。
+
+重要:
+- Motion Bankのファイル名/variant契約は今後も固定
+- 後工程で同名mp4を「本物のジェスチャー動画＋lip-sync動画」に差し替える
+- rendererやscene planner側は変更しない
+- 旧静止画モードは --static-presenter で残す
+
+つまり、Motion Bankの品質だけを上げればReel全体のPresenter品質も上がる構造です。

@@ -1,0 +1,50 @@
+{
+  "version": 1,
+  "profile": "shunri-motion-bank-v1",
+  "schedulerRoot": "~/shun-x-scheduler",
+  "outputDir": "~/shunri-voice/assets/motion-bank",
+  "clipDurationSeconds": 6,
+  "fps": 30,
+  "variants": [
+    {
+      "id": "neutral-talk",
+      "source": "assets/instagram/character/reference/canonical_front.jpeg",
+      "motion": "push-in"
+    },
+    {
+      "id": "open-hand",
+      "source": "assets/instagram/character/reference/canonical_three_quarter.jpeg",
+      "motion": "pan-left"
+    },
+    {
+      "id": "point-up",
+      "source": "assets/instagram/character/reference/current_ai_pr.jpg",
+      "motion": "push-in"
+    },
+    {
+      "id": "point-side",
+      "source": "assets/instagram/character/reference/canonical_three_quarter.jpeg",
+      "motion": "pan-right"
+    },
+    {
+      "id": "think",
+      "source": "assets/instagram/character/reference/canonical_headshot.jpeg",
+      "motion": "slow-push"
+    },
+    {
+      "id": "small-nod",
+      "source": "assets/instagram/character/reference/canonical_front.jpeg",
+      "motion": "micro-drift"
+    },
+    {
+      "id": "explain-both-hands",
+      "source": "assets/instagram/character/reference/current_ai_pr.jpg",
+      "motion": "slow-push"
+    },
+    {
+      "id": "cta-forward",
+      "source": "assets/instagram/character/reference/canonical_front.jpeg",
+      "motion": "push-in-strong"
+    }
+  ]
+}
