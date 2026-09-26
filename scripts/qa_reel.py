@@ -61,6 +61,7 @@ def ffprobe(path: Path) -> dict:
     proc = subprocess.run(
         [
             "docker", "run", "--rm",
+            "--entrypoint", "ffprobe",
             "-v", f"{parent}:/work:ro",
             RENDER_IMAGE,
             "-hide_banner",
