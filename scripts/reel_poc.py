@@ -441,6 +441,55 @@ def extract_scene_audio(job_dir: Path, start: float, duration: float, output_nam
     return output
 
 
+def render_scene_visual(
+    job_dir: Path,
+    synced_name: str,
+    final_name: str,
+    scene_duration: float,
+    overlay_name: str | None,
+) -> None:
+    base = [
+        "docker", "run", "--rm",
+        "-v", f"{job_dir.resolve()}:/work",
+        RENDER_IMAGE,
+        "-y",
+        "-i", f"/work/segments-synced/{synced_name}",
+    ]
+
+    if overlay_name:
+        filter_graph = (
+            "[1:v]scale=840:620:force_original_aspect_ratio=decrease[ov];"
+            "[0:v][ov]overlay=(W-w)/2:120[outv]"
+        )
+        cmd = base + [
+            "-loop", "1",
+            "-i", f"/work/overlays/{overlay_name}",
+            "-filter_complex", filter_graph,
+            "-map", "[outv]",
+            "-t", f"{scene_duration:.3f}",
+            "-an",
+            "-r", "30",
+            "-c:v", "libx264",
+            "-preset", "veryfast",
+            "-crf", "20",
+            "-pix_fmt", "yuv420p",
+            f"/work/segments/{final_name}",
+        ]
+    else:
+        cmd = base + [
+            "-t", f"{scene_duration:.3f}",
+            "-an",
+            "-r", "30",
+            "-c:v", "libx264",
+            "-preset", "veryfast",
+            "-crf", "20",
+            "-pix_fmt", "yuv420p",
+            f"/work/segments/{final_name}",
+        ]
+
+    subprocess.run(cmd, check=True)
+
+
 def render_motion_track(job_dir: Path, timeline: list[dict], lipsync_backend: str) -> Path:
     segments_dir = job_dir / "segments"
     raw_dir = job_dir / "segments-raw"
@@ -498,23 +547,12 @@ def render_motion_track(job_dir: Path, timeline: list[dict], lipsync_backend: st
             check=True,
         )
 
-        subprocess.run(
-            [
-                "docker", "run", "--rm",
-                "-v", f"{job_dir.resolve()}:/work",
-                RENDER_IMAGE,
-                "-y",
-                "-i", f"/work/segments-synced/{synced_name}",
-                "-t", f"{scene_duration:.3f}",
-                "-an",
-                "-r", "30",
-                "-c:v", "libx264",
-                "-preset", "veryfast",
-                "-crf", "20",
-                "-pix_fmt", "yuv420p",
-                f"/work/segments/{final_name}",
-            ],
-            check=True,
+        render_scene_visual(
+            job_dir,
+            synced_name,
+            final_name,
+            scene_duration,
+            str(scene.get("overlay")) if scene.get("overlay") else None,
         )
         concat_lines.append(f"file '{final_name}'")
 
@@ -544,20 +582,42 @@ def render_motion(
     output_name: str,
     timeline: list[dict],
     lipsync_backend: str,
+    bgm_path: Path | None,
 ) -> None:
     copy_motion_bank(job_dir, timeline)
     render_motion_track(job_dir, timeline, lipsync_backend)
 
-    cmd = [
+    base = [
         "docker", "run", "--rm",
         "-v", f"{job_dir.resolve()}:/work",
         RENDER_IMAGE,
         "-y",
         "-i", "/work/presenter-track.mp4",
         "-i", "/work/narration.wav",
-        "-vf", "subtitles=/work/captions.ass:fontsdir=/usr/share/fonts/opentype/noto",
-        "-map", "0:v:0",
-        "-map", "1:a:0",
+    ]
+
+    if bgm_path is not None:
+        filter_graph = (
+            "[0:v]subtitles=/work/captions.ass:fontsdir=/usr/share/fonts/opentype/noto[vout];"
+            "[2:a]volume=0.14[bgm];"
+            "[bgm][1:a]sidechaincompress=threshold=0.015:ratio=10:attack=20:release=350[ducked];"
+            "[1:a][ducked]amix=inputs=2:normalize=0,alimiter=limit=0.95[aout]"
+        )
+        cmd = base + [
+            "-stream_loop", "-1",
+            "-i", f"/work/{bgm_path.name}",
+            "-filter_complex", filter_graph,
+            "-map", "[vout]",
+            "-map", "[aout]",
+        ]
+    else:
+        cmd = base + [
+            "-vf", "subtitles=/work/captions.ass:fontsdir=/usr/share/fonts/opentype/noto",
+            "-map", "0:v:0",
+            "-map", "1:a:0",
+        ]
+
+    cmd += [
         "-t", f"{duration:.3f}",
         "-r", "30",
         "-c:v", "libx264",
@@ -620,7 +680,9 @@ def main() -> int:
 
     print("[2/4] 台本をシーン / 字幕へ分割")
     phrases = split_script(script)
-    timeline = build_timeline(phrases, duration)
+    timeline = build_timeline(phrases, duration, narration_path)
+    prepare_overlays(job_dir, timeline, args.overlay_dir)
+    bgm_path = prepare_bgm(job_dir, args.bgm)
     write_plan(plan_path, script, duration, timeline)
     write_ass(ass_path, timeline, width, height)
 
@@ -634,20 +696,53 @@ def main() -> int:
         render_static(job_dir, duration, output.name)
     else:
         print("Motion Bank を使ってPresenterカットを自動構成します。")
-        render_motion(job_dir, duration, output.name, timeline, args.lipsync_backend)
+        render_motion(
+            job_dir,
+            duration,
+            output.name,
+            timeline,
+            args.lipsync_backend,
+            bgm_path,
+        )
     shutil.copy2(temp_output, output)
 
+    qa_report = job_dir / "qa-report.json"
+    if not args.skip_qa:
+        print("[QA] Reel自動検査")
+        qa = subprocess.run(
+            [
+                sys.executable,
+                str(QA),
+                "--video", str(output),
+                "--narration", str(narration_path),
+                "--scene-plan", str(plan_path),
+                "--captions", str(ass_path),
+                "--script-file", str(script_path),
+                "--report", str(qa_report),
+            ],
+            cwd=ROOT,
+            check=False,
+        )
+        if qa.returncode != 0:
+            raise SystemExit(f"Reel QAで不合格になりました: {qa_report}")
+
     print()
-    print("Phase-1 Reel PoC を生成しました。")
+    print("Shunri Reel を生成しました。")
     print(f"- video: {output}")
     print(f"- narration: {narration_path}")
     print(f"- scene plan: {plan_path}")
     print(f"- captions: {ass_path}")
+    if not args.skip_qa:
+        print(f"- QA: {qa_report}")
+    if args.overlay_dir:
+        print(f"- overlays: {args.overlay_dir.expanduser().resolve()}")
+    if args.bgm:
+        print(f"- BGM: {args.bgm.expanduser().resolve()}")
     print()
     if args.static_presenter:
         print("注: --static-presenter のため旧静止画モードです。")
     else:
-        print("Phase-3: Production Motion Bank / per-scene lip-sync adapter に対応しています。")
+        print("Phase-4: caption alignment / overlays / BGM ducking / QA まで有効です。")
         if args.lipsync_backend == "auto":
             print("lip-sync: SHUNRI_LIPSYNC_COMMAND があればexternal、なければpassthroughです。")
         else:
