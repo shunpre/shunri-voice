@@ -27,7 +27,13 @@
     "maxLines": 2,
     "avoidTextInsideGeneratedImages": true,
     "wordTimestampAlignment": "whisper-fallback",
-    "duplicateSubtitlePolicy": "reject"
+    "duplicateSubtitlePolicy": "reject",
+    "currentAlignment": "speech-energy-pauses-v1",
+    "alignmentRoadmap": [
+      "word-timestamps-when-provider-available",
+      "speech-energy-pauses-v1",
+      "character-weight-fallback"
+    ]
   },
   "pacing": {
     "defaultVisualChangeSeconds": [
@@ -73,12 +79,14 @@
       "generated-diagram",
       "generated-broll"
     ],
-    "randomStockFallback": false
+    "randomStockFallback": false,
+    "sceneOverlayNaming": "s01.png|jpg|jpeg|webp"
   },
   "audio": {
     "narrationIsMaster": true,
     "bgmAutoDuck": true,
-    "repetitiveWhoosh": false
+    "repetitiveWhoosh": false,
+    "bgmOptional": true
   },
   "qa": {
     "rejectOn": [
@@ -92,6 +100,7 @@
       "wrong-aspect-ratio",
       "wrong-shunri-identity",
       "approved-script-mutated"
-    ]
+    ],
+    "report": "qa-report.json"
   }
 }

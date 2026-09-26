@@ -316,3 +316,76 @@ provider未設定時:
     docs/PRODUCTION_MOTION_BANK.md
 
 Intel MacではMuseTalkのようなGPU前提OSSをローカル本番実行しない。lip-sync engineだけ外部GPUへ逃がし、音声生成・scene planning・字幕・最終renderはMac側に残す設計です。
+
+
+## Phase 4 — 外部動画ツール未選定のまま進められる完成ライン
+
+外部の動画生成 / lip-sync providerを決めなくても、現在はここまで自動化できます。
+
+    approved script
+    → 瞬理 canonical voice
+    → 音声の無音区間を使った字幕タイミング補正
+    → scene plan
+    → Motion Bank選択
+    → sceneごとの音声切り出し
+    → lip-sync adapter（provider未設定時はpassthrough）
+    → 任意のスクショ / 図解overlay
+    → 任意BGM + narration優先のauto duck
+    → 1080x1920 MP4
+    → deterministic QA
+    → QA合格時のみ完成扱い
+
+標準実行:
+
+    make reel FILE="$HOME/shunri-voice/samples/reel_script.txt"
+
+overlayを入れる場合は、フォルダに:
+
+    s01.png
+    s03.jpg
+    s05.webp
+
+のようにscene idで置きます。
+
+    python3 scripts/reel_poc.py       --file "$HOME/shunri-voice/samples/reel_script.txt"       --overlay-dir "$HOME/Desktop/reel-overlays"
+
+BGMも使う場合:
+
+    python3 scripts/reel_poc.py       --file "$HOME/shunri-voice/samples/reel_script.txt"       --overlay-dir "$HOME/Desktop/reel-overlays"       --bgm "$HOME/Desktop/bgm.mp3"
+
+BGMはナレーションをsidechainにして自動duckします。
+
+QA:
+
+    outputs/.../.poc-work/qa-report.json
+
+検査対象:
+- 1080x1920
+- 約30fps
+- video/audio stream存在
+- narration無音/空ファイル
+- narration peak
+- videoとnarrationの尺差
+- approved script不変
+- voice=shunri
+- caption有無 / 重複
+- 最終captionの終端
+- 出力ファイルサイズ
+
+字幕タイミングは現在、追加モデル不要の `speech-energy-pauses-v1`。
+Irodoriの音声波形から無音区間を検出し、単純な文字数比例よりも句読点・間の位置へ寄せます。
+将来word timestamp providerを接続した場合は、その部分だけ差し替え可能です。
+
+### GitHub worker
+
+local workerは今後:
+
+    action=narrate
+    action=render_reel
+
+の両方を処理できます。
+
+`render_reel` は軽量 review proxy、narration.mp3、scene-plan.json、captions.ass、qa-report.jsonを
+private scheduler repositoryへ返します。1080x1920の完成masterはMacローカルに保持し、Git履歴を動画masterで肥大化させません。
+
+これにより外部動画ツールを決める前でも、GitHub queueから「確定台本→完成Reel→Human Gate用レビュー」まで通せます。
