@@ -53,6 +53,59 @@ def server_is_healthy() -> bool:
         return False
 
 
+def docker_daemon_ready() -> bool:
+    if shutil.which("docker") is None:
+        return False
+    result = subprocess.run(
+        ["docker", "info"],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        check=False,
+    )
+    return result.returncode == 0
+
+
+def ensure_docker_daemon(timeout_seconds: int = 120) -> None:
+    if shutil.which("docker") is None:
+        raise SystemExit(
+            "Docker CLI が見つかりません。Docker Desktop のインストールを確認してください。"
+        )
+
+    if docker_daemon_ready():
+        return
+
+    if platform.system() == "Darwin":
+        print("Docker Desktop が停止しています。自動起動します...")
+        opened = subprocess.run(
+            ["open", "-a", "Docker"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            check=False,
+        )
+        if opened.returncode != 0:
+            raise SystemExit(
+                "Docker Desktop を自動起動できませんでした。"
+                " Applications から Docker を起動して再実行してください。"
+            )
+
+        waited = 0
+        while waited < timeout_seconds:
+            if docker_daemon_ready():
+                print("Docker Desktop の起動を確認しました。")
+                return
+            time.sleep(2)
+            waited += 2
+
+        raise SystemExit(
+            f"Docker Desktop が {timeout_seconds} 秒以内に起動しませんでした。"
+            " Docker Desktop の画面を確認してから再実行してください。"
+        )
+
+    raise SystemExit(
+        "Docker daemon が停止しています。Docker を起動してから再実行してください。"
+    )
+
+
 def ensure_server() -> None:
     if not is_intel_mac():
         return
@@ -60,10 +113,7 @@ def ensure_server() -> None:
     if server_is_healthy():
         return
 
-    if shutil.which("docker") is None:
-        raise SystemExit(
-            "Docker が見つかりません。Docker Desktop を起動してから再実行してください。"
-        )
+    ensure_docker_daemon()
 
     if not SERVER_DIR.exists():
         raise SystemExit(
