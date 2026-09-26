@@ -18,6 +18,7 @@ RESULTS_REL = Path("runtime/shunri-reel-results.json")
 ASSETS_REL = Path("runtime/shunri-reel-assets")
 LOCAL_JOB_OUTPUTS = ROOT / "outputs" / "jobs"
 CLI = ROOT / "scripts" / "shunri_cli.py"
+REEL_RENDERER = ROOT / "scripts" / "reel_poc.py"
 DOCKER_IMAGE = "irodori-openai-tts:local"
 
 
@@ -77,7 +78,7 @@ def git_publish(repo: Path) -> None:
     if diff.returncode == 0:
         return
 
-    run(["git", "commit", "-m", "chore: process Shunri Reel narration jobs"], cwd=repo)
+    run(["git", "commit", "-m", "chore: process Shunri Reel jobs"], cwd=repo)
 
     # Rebase once in case ChatGPT appended another job during synthesis.
     pull = subprocess.run(
@@ -163,12 +164,23 @@ def upsert_result(results: list[dict], value: dict) -> None:
     results.append(value)
 
 
-def process_job(job: dict, bridge: Path) -> dict:
+def resolve_bridge_asset(bridge: Path, value: str) -> Path:
+    relative = Path(value)
+    candidate = (bridge / relative).resolve()
+    bridge_root = bridge.resolve()
+    if candidate != bridge_root and bridge_root not in candidate.parents:
+        raise ValueError(f"bridge外のassetは使えません: {value}")
+    if not candidate.exists():
+        raise ValueError(f"assetが見つかりません: {value}")
+    return candidate
+
+
+def process_narrate_job(job: dict, bridge: Path) -> dict:
     job_id = str(job.get("id", "")).strip()
     if not job_id:
         raise ValueError("job.id がありません。")
     if job.get("action") != "narrate":
-        raise ValueError("現在のローカルworkerは action=narrate のみ対応しています。")
+        raise ValueError("action=narrate ではありません。")
     if job.get("scriptApproved") is not True:
         raise ValueError("scriptApproved=true の確定台本だけをナレーション化できます。")
     if job.get("voice") not in (None, "shunri"):
@@ -206,6 +218,120 @@ def process_job(job: dict, bridge: Path) -> dict:
     }
 
 
+def process_render_job(job: dict, bridge: Path) -> dict:
+    job_id = str(job.get("id", "")).strip()
+    if not job_id:
+        raise ValueError("job.id がありません。")
+    if job.get("action") != "render_reel":
+        raise ValueError("action=render_reel ではありません。")
+    if job.get("scriptApproved") is not True:
+        raise ValueError("scriptApproved=true の確定台本だけをReel化できます。")
+    if job.get("voice") not in (None, "shunri"):
+        raise ValueError("voice は shunri 固定です。")
+
+    script = str(job.get("script", "")).strip()
+    if not script:
+        raise ValueError("script が空です。")
+
+    local_dir = LOCAL_JOB_OUTPUTS / job_id
+    local_dir.mkdir(parents=True, exist_ok=True)
+    video_path = local_dir / "reel.mp4"
+
+    cmd = [
+        sys.executable,
+        str(REEL_RENDERER),
+        "--text",
+        script,
+        "--output",
+        str(video_path),
+        "--lipsync-backend",
+        str(job.get("lipsyncBackend") or "auto"),
+    ]
+
+    bgm_asset = str(job.get("bgmAsset") or "").strip()
+    if bgm_asset:
+        bgm_path = resolve_bridge_asset(bridge, bgm_asset)
+        cmd.extend(["--bgm", str(bgm_path)])
+
+    overlay_assets = job.get("overlayAssets") or {}
+    if overlay_assets:
+        if not isinstance(overlay_assets, dict):
+            raise ValueError("overlayAssets は {sceneId: assetPath} 形式です。")
+        overlay_dir = local_dir / "input-overlays"
+        overlay_dir.mkdir(parents=True, exist_ok=True)
+        for scene_id, asset_value in overlay_assets.items():
+            scene = str(scene_id).strip()
+            if not re.fullmatch(r"s\d{2,3}", scene):
+                raise ValueError(f"overlay scene id が不正です: {scene}")
+            source = resolve_bridge_asset(bridge, str(asset_value))
+            destination = overlay_dir / f"{scene}{source.suffix.lower()}"
+            shutil.copy2(source, destination)
+        cmd.extend(["--overlay-dir", str(overlay_dir)])
+
+    run(cmd, cwd=ROOT)
+
+    work_dir = local_dir / ".poc-work"
+    narration_wav = work_dir / "narration.wav"
+    scene_plan = work_dir / "scene-plan.json"
+    qa_report = work_dir / "qa-report.json"
+    captions = work_dir / "captions.ass"
+
+    if not video_path.exists():
+        raise RuntimeError("Reel renderer がMP4を生成しませんでした。")
+    if not qa_report.exists():
+        raise RuntimeError("Reel QA report が生成されませんでした。")
+
+    qa = json.loads(qa_report.read_text(encoding="utf-8"))
+    if qa.get("passed") is not True:
+        raise RuntimeError("Reel QAが不合格です。")
+
+    asset_dir_rel = ASSETS_REL / job_id
+    asset_dir = bridge / asset_dir_rel
+    asset_dir.mkdir(parents=True, exist_ok=True)
+
+    video_asset = asset_dir / "reel.mp4"
+    shutil.copy2(video_path, video_asset)
+
+    plan_asset = asset_dir / "scene-plan.json"
+    shutil.copy2(scene_plan, plan_asset)
+
+    qa_asset = asset_dir / "qa-report.json"
+    shutil.copy2(qa_report, qa_asset)
+
+    captions_asset = asset_dir / "captions.ass"
+    shutil.copy2(captions, captions_asset)
+
+    narration_asset = asset_dir / "narration.mp3"
+    convert_mp3(narration_wav, narration_asset)
+
+    return {
+        "jobId": job_id,
+        "action": "render_reel",
+        "status": "completed",
+        "voice": "shunri",
+        "asset": (asset_dir_rel / "reel.mp4").as_posix(),
+        "narrationAsset": (asset_dir_rel / "narration.mp3").as_posix(),
+        "scenePlanAsset": (asset_dir_rel / "scene-plan.json").as_posix(),
+        "qaAsset": (asset_dir_rel / "qa-report.json").as_posix(),
+        "captionsAsset": (asset_dir_rel / "captions.ass").as_posix(),
+        "qaPassed": True,
+        "durationSeconds": round(wav_duration(narration_wav), 3),
+        "motionBank": "production-if-complete-else-generated",
+        "lipsyncBackend": str(job.get("lipsyncBackend") or "auto"),
+        "localMaster": f"~/shunri-voice/outputs/jobs/{job_id}/reel.mp4",
+        "completedAt": now_iso(),
+    }
+
+
+def process_job(job: dict, bridge: Path) -> dict:
+    action = job.get("action")
+    if action == "narrate":
+        return process_narrate_job(job, bridge)
+    if action == "render_reel":
+        return process_render_job(job, bridge)
+    raise ValueError(f"未対応のactionです: {action}")
+
+
 def main() -> int:
     args = parse_args()
     bridge = args.bridge_repo.expanduser().resolve()
@@ -226,10 +352,14 @@ def main() -> int:
 
     jobs = jobs_doc.setdefault("jobs", [])
     results = results_doc.setdefault("results", [])
-    queued = [job for job in jobs if job.get("status") == "queued" and job.get("action") == "narrate"]
+    supported_actions = {"narrate", "render_reel"}
+    queued = [
+        job for job in jobs
+        if job.get("status") == "queued" and job.get("action") in supported_actions
+    ]
 
     if not queued:
-        print("queued の瞬理ナレーションjobはありません。")
+        print("queued の瞬理Reel jobはありません。")
         return 0
 
     changed = False
