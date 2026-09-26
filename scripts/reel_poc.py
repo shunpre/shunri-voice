@@ -3,10 +3,12 @@ from __future__ import annotations
 
 import argparse
 import json
+import platform
 import re
 import shutil
 import subprocess
 import sys
+import time
 import wave
 from pathlib import Path
 
@@ -193,9 +195,49 @@ Format: Layer,Start,End,Style,Name,MarginL,MarginR,MarginV,Effect,Text
     path.write_text("".join(lines), encoding="utf-8")
 
 
-def ensure_renderer_image(skip_build: bool) -> None:
+def docker_daemon_ready() -> bool:
     if shutil.which("docker") is None:
-        raise SystemExit("Docker が見つかりません。Docker Desktop を起動してください。")
+        return False
+    result = subprocess.run(
+        ["docker", "info"],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        check=False,
+    )
+    return result.returncode == 0
+
+
+def ensure_docker_daemon(timeout_seconds: int = 120) -> None:
+    if shutil.which("docker") is None:
+        raise SystemExit("Docker CLI が見つかりません。Docker Desktop のインストールを確認してください。")
+    if docker_daemon_ready():
+        return
+    if platform.system() == "Darwin":
+        print("Docker Desktop が停止しています。自動起動します...")
+        opened = subprocess.run(
+            ["open", "-a", "Docker"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            check=False,
+        )
+        if opened.returncode != 0:
+            raise SystemExit("Docker Desktop を自動起動できませんでした。Applications から Docker を起動してください。")
+        waited = 0
+        while waited < timeout_seconds:
+            if docker_daemon_ready():
+                print("Docker Desktop の起動を確認しました。")
+                return
+            time.sleep(2)
+            waited += 2
+        raise SystemExit(
+            f"Docker Desktop が {timeout_seconds} 秒以内に起動しませんでした。"
+            " Docker Desktop の画面を確認して再実行してください。"
+        )
+    raise SystemExit("Docker daemon が停止しています。Docker を起動してから再実行してください。")
+
+
+def ensure_renderer_image(skip_build: bool) -> None:
+    ensure_docker_daemon()
     if skip_build:
         return
     inspect = subprocess.run(
